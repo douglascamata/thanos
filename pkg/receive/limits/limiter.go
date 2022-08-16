@@ -46,7 +46,7 @@ func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *Limi
 	if limitsConfig == nil {
 		return limiter
 	}
-	limiter.LoadConfig(limitsConfig)
+	limiter.loadConfig(limitsConfig)
 
 	return limiter
 }
@@ -66,7 +66,7 @@ func (l *Limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.Pa
 			if err != nil {
 				return err
 			}
-			l.LoadConfig(config)
+			l.loadConfig(config)
 			return nil
 		})
 	}, func(err error) {
@@ -74,7 +74,7 @@ func (l *Limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.Pa
 	})
 }
 
-func (l *Limiter) LoadConfig(config *RootLimitsConfig) {
+func (l *Limiter) loadConfig(config *RootLimitsConfig) {
 	l.Lock()
 	defer l.Unlock()
 	maxWriteConcurrency := config.WriteLimits.GlobalLimits.MaxConcurrency
