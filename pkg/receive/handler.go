@@ -103,7 +103,6 @@ type Options struct {
 	ForwardTimeout           time.Duration
 	RelabelConfigs           []*relabel.Config
 	TSDBStats                TSDBStats
-	LimiterConfigChan        <-chan *RootLimitsConfig
 	SeriesLimitSupported     bool
 	MaxPerTenantLimit        uint64
 	MetaMonitoringUrl        *url.URL
