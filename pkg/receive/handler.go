@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/httpconfig"
 	"github.com/thanos-io/thanos/pkg/logging"
 	"github.com/thanos-io/thanos/pkg/promclient"
+	"github.com/thanos-io/thanos/pkg/receive/limits"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -108,7 +109,7 @@ type Options struct {
 	MetaMonitoringUrl        *url.URL
 	MetaMonitoringHttpClient *extflag.PathOrContent
 	MetaMonitoringLimitQuery string
-	Limiter                  *limiter
+	Limiter                  *limits.Limiter
 }
 
 // activeSeriesLimiter encompasses active series limiting logic.
@@ -140,7 +141,7 @@ type Handler struct {
 	writeSamplesTotal    *prometheus.HistogramVec
 	writeTimeseriesTotal *prometheus.HistogramVec
 
-	Limiter *limiter
+	Limiter *limits.Limiter
 }
 
 func NewHandler(logger log.Logger, o *Options) *Handler {

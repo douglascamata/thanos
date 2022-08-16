@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Authors.
 // Licensed under the Apache License 2.0.
 
-package receive
+package limits
 
 import (
 	"context"
@@ -17,7 +17,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/runutil"
 )
 
-type limiter struct {
+// Limiter is responsible for managing the configuration and initializtion of
+// different types that apply limits to the Receive instance.
+type Limiter struct {
 	sync.RWMutex
 	requestLimiter requestLimiter
 	writeGate      gate.Gate
@@ -32,8 +34,10 @@ type requestLimiter interface {
 	AllowSamples(tenant string, amount int64) bool
 }
 
-func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *limiter {
-	limiter := &limiter{
+// NewLimiter creates a new *Limiter given a configuration and prometheus
+// registerer.
+func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *Limiter {
+	limiter := &Limiter{
 		writeGate:      gate.NewNoop(),
 		requestLimiter: &noopRequestLimiter{},
 		registerer:     reg,
@@ -47,7 +51,10 @@ func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *limi
 	return limiter
 }
 
-func (l *limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.PathOrContent) {
+// StartConfigReloader starts the automatic configuration reloader based off of
+// the file indicated by pathOrContent. It starts a Go routine in the given
+// *run.Group.
+func (l *Limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.PathOrContent) {
 	if pathOrContent == nil {
 		return
 	}
@@ -67,7 +74,7 @@ func (l *limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.Pa
 	})
 }
 
-func (l *limiter) LoadConfig(config *RootLimitsConfig) {
+func (l *Limiter) LoadConfig(config *RootLimitsConfig) {
 	l.Lock()
 	defer l.Unlock()
 	maxWriteConcurrency := config.WriteLimits.GlobalLimits.MaxConcurrency
@@ -86,18 +93,22 @@ func (l *limiter) LoadConfig(config *RootLimitsConfig) {
 	)
 }
 
-func (l *limiter) RequestLimiter() requestLimiter {
+// RequestLimiter is a safe getter for the request limiter.
+func (l *Limiter) RequestLimiter() requestLimiter {
 	l.RLock()
 	defer l.RUnlock()
 	return l.requestLimiter
 }
 
-func (l *limiter) WriteGate() gate.Gate {
+// WriteGate is a safe getter for the write gate.
+func (l *Limiter) WriteGate() gate.Gate {
 	l.RLock()
 	defer l.RUnlock()
 	return l.writeGate
 }
 
+// ParseLimitConfigContent parses the limit configuration from the path or
+// content.
 func ParseLimitConfigContent(limitsConfig *extkingpin.PathOrContent) (*RootLimitsConfig, error) {
 	if limitsConfig == nil {
 		return &RootLimitsConfig{}, nil

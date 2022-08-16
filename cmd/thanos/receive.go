@@ -43,6 +43,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/logging"
 	"github.com/thanos-io/thanos/pkg/prober"
 	"github.com/thanos-io/thanos/pkg/receive"
+	"github.com/thanos-io/thanos/pkg/receive/limits"
 	"github.com/thanos-io/thanos/pkg/runutil"
 	grpcserver "github.com/thanos-io/thanos/pkg/server/grpc"
 	httpserver "github.com/thanos-io/thanos/pkg/server/http"
@@ -210,11 +211,11 @@ func runReceive(
 	)
 	writer := receive.NewWriter(log.With(logger, "component", "receive-writer"), dbs)
 
-	limiterConfig, err := receive.ParseLimitConfigContent(conf.limitsConfig)
+	limiterConfig, err := limits.ParseLimitConfigContent(conf.limitsConfig)
 	if err != nil {
 		return errors.Wrap(err, "loading limiter configuration")
 	}
-	limiter := receive.NewLimiter(limiterConfig, reg)
+	limiter := limits.NewLimiter(limiterConfig, reg)
 
 	webHandler := receive.NewHandler(log.With(logger, "component", "receive-handler"), &receive.Options{
 		Writer:                   writer,

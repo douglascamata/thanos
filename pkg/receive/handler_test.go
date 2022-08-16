@@ -40,6 +40,7 @@ import (
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/errutil"
+	"github.com/thanos-io/thanos/pkg/receive/limits"
 	"github.com/thanos-io/thanos/pkg/runutil"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
@@ -368,7 +369,7 @@ func newTestHandlerHashring(appendables []*fakeAppendable, replicationFactor uin
 			ReplicaHeader:     DefaultReplicaHeader,
 			ReplicationFactor: replicationFactor,
 			ForwardTimeout:    5 * time.Second,
-			Limiter:           NewLimiter(nil, nil),
+			Limiter:           limits.NewLimiter(nil, nil),
 			Writer:            NewWriter(log.NewNopLogger(), newFakeTenantAppendable(appendables[i])),
 		})
 		handlers = append(handlers, h)
@@ -776,12 +777,12 @@ func TestReceiveWriteRequestLimits(t *testing.T) {
 			handlers, _ := newTestHandlerHashring(appendables, 3)
 			handler := handlers[0]
 			tenant := "test"
-			handler.Limiter = NewLimiter(
-				&RootLimitsConfig{
-					WriteLimits: writeLimitsConfig{
-						TenantsLimits: tenantsWriteLimitsConfig{
-							tenant: &writeLimitConfig{
-								RequestLimits: newEmptyRequestLimitsConfig().
+			handler.Limiter = limits.NewLimiter(
+				&limits.RootLimitsConfig{
+					WriteLimits: limits.WriteLimitsConfig{
+						TenantsLimits: limits.TenantsWriteLimitsConfig{
+							tenant: &limits.WriteLimitConfig{
+								RequestLimits: limits.NewEmptyRequestLimitsConfig().
 									SetSizeBytesLimit(int64(1 * units.Megabyte)).
 									SetSeriesLimit(20).
 									SetSamplesLimit(200),

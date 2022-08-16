@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Authors.
 // Licensed under the Apache License 2.0.
 
-package receive
+package limits
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -14,7 +14,7 @@ const (
 	sizeBytesLimitName = "body_size"
 )
 
-var unlimitedRequestLimitsConfig = newEmptyRequestLimitsConfig().
+var unlimitedRequestLimitsConfig = NewEmptyRequestLimitsConfig().
 	SetSizeBytesLimit(0).
 	SetSeriesLimit(0).
 	SetSamplesLimit(0)
@@ -26,7 +26,7 @@ type configRequestLimiter struct {
 	configuredLimits    *prometheus.GaugeVec
 }
 
-func newConfigRequestLimiter(reg prometheus.Registerer, writeLimits *writeLimitsConfig) *configRequestLimiter {
+func newConfigRequestLimiter(reg prometheus.Registerer, writeLimits *WriteLimitsConfig) *configRequestLimiter {
 	// Merge the default limits configuration with an unlimited configuration
 	// to ensure the nils are overwritten with zeroes.
 	defaultRequestLimits := writeLimits.DefaultLimits.RequestLimits.OverlayWith(unlimitedRequestLimitsConfig)
