@@ -368,6 +368,7 @@ func newTestHandlerHashring(appendables []*fakeAppendable, replicationFactor uin
 			ReplicaHeader:     DefaultReplicaHeader,
 			ReplicationFactor: replicationFactor,
 			ForwardTimeout:    5 * time.Second,
+			Limiter:           NewLimiter(nil, nil),
 			Writer:            NewWriter(log.NewNopLogger(), newFakeTenantAppendable(appendables[i])),
 		})
 		handlers = append(handlers, h)
@@ -775,7 +776,7 @@ func TestReceiveWriteRequestLimits(t *testing.T) {
 			handlers, _ := newTestHandlerHashring(appendables, 3)
 			handler := handlers[0]
 			tenant := "test"
-			handler.limiter = newLimiter(
+			handler.Limiter = NewLimiter(
 				&RootLimitsConfig{
 					WriteLimits: writeLimitsConfig{
 						TenantsLimits: tenantsWriteLimitsConfig{

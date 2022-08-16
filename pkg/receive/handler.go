@@ -103,12 +103,13 @@ type Options struct {
 	ForwardTimeout           time.Duration
 	RelabelConfigs           []*relabel.Config
 	TSDBStats                TSDBStats
-	LimitsConfig             *RootLimitsConfig
+	LimiterConfigChan        <-chan *RootLimitsConfig
 	SeriesLimitSupported     bool
 	MaxPerTenantLimit        uint64
 	MetaMonitoringUrl        *url.URL
 	MetaMonitoringHttpClient *extflag.PathOrContent
 	MetaMonitoringLimitQuery string
+	Limiter                  *limiter
 }
 
 // activeSeriesLimiter encompasses active series limiting logic.
@@ -140,7 +141,7 @@ type Handler struct {
 	writeSamplesTotal    *prometheus.HistogramVec
 	writeTimeseriesTotal *prometheus.HistogramVec
 
-	limiter *limiter
+	Limiter *limiter
 }
 
 func NewHandler(logger log.Logger, o *Options) *Handler {
@@ -166,7 +167,7 @@ func NewHandler(logger log.Logger, o *Options) *Handler {
 			Max:    30 * time.Second,
 			Jitter: true,
 		},
-		limiter: newLimiter(o.LimitsConfig, registerer),
+		Limiter: o.Limiter,
 		forwardRequests: promauto.With(registerer).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "thanos_receive_forward_requests_total",
@@ -429,14 +430,14 @@ func (h *Handler) receiveHTTP(w http.ResponseWriter, r *http.Request) {
 	tLogger := log.With(h.logger, "tenant", tenant)
 
 	tracing.DoInSpan(r.Context(), "receive_write_gate_ismyturn", func(ctx context.Context) {
-		err = h.limiter.writeGate.Start(r.Context())
+		err = h.Limiter.writeGate.Start(r.Context())
 	})
 	if err != nil {
 		level.Error(tLogger).Log("err", err, "msg", "internal server error")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer h.limiter.writeGate.Done()
+	defer h.Limiter.writeGate.Done()
 
 	under, err := h.ActiveSeriesLimit.isUnderLimit(tenant, tLogger)
 	if err != nil {
@@ -449,7 +450,7 @@ func (h *Handler) receiveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestLimiter := h.limiter.requestLimiter
+	requestLimiter := h.Limiter.requestLimiter
 	// io.ReadAll dynamically adjust the byte slice for read data, starting from 512B.
 	// Since this is receive hot path, grow upfront saving allocations and CPU time.
 	compressed := bytes.Buffer{}

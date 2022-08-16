@@ -194,18 +194,6 @@ func runReceive(
 		return errors.Wrap(err, "parse relabel configuration")
 	}
 
-	var limitsConfig *receive.RootLimitsConfig
-	if conf.limitsConfig != nil {
-		limitsContentYaml, err := conf.limitsConfig.Content()
-		if err != nil {
-			return errors.Wrap(err, "get content of limit configuration")
-		}
-		limitsConfig, err = receive.ParseRootLimitConfig(limitsContentYaml)
-		if err != nil {
-			return errors.Wrap(err, "parse limit configuration")
-		}
-	}
-
 	// Impose active series limit only if Receiver is in Router or RouterIngestor mode, and config is provided.
 	seriesLimitSupported := (receiveMode == receive.RouterOnly || receiveMode == receive.RouterIngestor) && conf.maxPerTenantLimit != 0
 
@@ -221,6 +209,13 @@ func runReceive(
 		hashFunc,
 	)
 	writer := receive.NewWriter(log.With(logger, "component", "receive-writer"), dbs)
+
+	limiterConfig, err := receive.LoadLimitConfig(conf.limitsConfig)
+	if err != nil {
+		return errors.Wrap(err, "loading limiter configuration")
+	}
+	limiter := receive.NewLimiter(limiterConfig, reg)
+
 	webHandler := receive.NewHandler(log.With(logger, "component", "receive-handler"), &receive.Options{
 		Writer:                   writer,
 		ListenAddress:            conf.rwAddress,
@@ -238,13 +233,15 @@ func runReceive(
 		DialOpts:                 dialOpts,
 		ForwardTimeout:           time.Duration(*conf.forwardTimeout),
 		TSDBStats:                dbs,
-		LimitsConfig:             limitsConfig,
+		Limiter:                  limiter,
 		SeriesLimitSupported:     seriesLimitSupported,
 		MaxPerTenantLimit:        conf.maxPerTenantLimit,
 		MetaMonitoringUrl:        conf.metaMonitoringUrl,
 		MetaMonitoringHttpClient: conf.metaMonitoringHttpClient,
 		MetaMonitoringLimitQuery: conf.metaMonitoringLimitQuery,
 	})
+
+	limiter.StartConfigReloader(g, conf.limitsConfig)
 
 	grpcProbe := prober.NewGRPC()
 	httpProbe := prober.NewHTTP()
