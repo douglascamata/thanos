@@ -210,7 +210,7 @@ func runReceive(
 	)
 	writer := receive.NewWriter(log.With(logger, "component", "receive-writer"), dbs)
 
-	limiterConfig, err := receive.LoadLimitConfig(conf.limitsConfig)
+	limiterConfig, err := receive.ParseLimitConfigContent(conf.limitsConfig)
 	if err != nil {
 		return errors.Wrap(err, "loading limiter configuration")
 	}

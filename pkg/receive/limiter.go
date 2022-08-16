@@ -55,7 +55,7 @@ func (l *limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.Pa
 	ctx, cancel := context.WithCancel(context.Background())
 	g.Add(func() error {
 		return runutil.Repeat(15*time.Second, ctx.Done(), func() error {
-			config, err := LoadLimitConfig(pathOrContent)
+			config, err := ParseLimitConfigContent(pathOrContent)
 			if err != nil {
 				return err
 			}
@@ -98,7 +98,7 @@ func (l *limiter) WriteGate() gate.Gate {
 	return l.writeGate
 }
 
-func LoadLimitConfig(limitsConfig *extkingpin.PathOrContent) (*RootLimitsConfig, error) {
+func ParseLimitConfigContent(limitsConfig *extkingpin.PathOrContent) (*RootLimitsConfig, error) {
 	if limitsConfig == nil {
 		return &RootLimitsConfig{}, nil
 	}
