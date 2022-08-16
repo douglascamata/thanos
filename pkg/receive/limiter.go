@@ -5,6 +5,7 @@ package receive
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/efficientgo/tools/extkingpin"
@@ -17,9 +18,10 @@ import (
 )
 
 type limiter struct {
+	sync.RWMutex
 	requestLimiter requestLimiter
 	writeGate      gate.Gate
-	config         *RootLimitsConfig
+	registerer     prometheus.Registerer
 	// TODO: extract active series limiting logic into a self-contained type and
 	// move it here.
 }
@@ -34,25 +36,13 @@ func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *limi
 	limiter := &limiter{
 		writeGate:      gate.NewNoop(),
 		requestLimiter: &noopRequestLimiter{},
+		registerer:     reg,
 	}
 
 	if limitsConfig == nil {
 		return limiter
 	}
-
-	limiter.config = limitsConfig
-
-	maxWriteConcurrency := limiter.config.WriteLimits.GlobalLimits.MaxConcurrency
-	if maxWriteConcurrency > 0 {
-		limiter.writeGate = gate.New(
-			extprom.WrapRegistererWithPrefix(
-				"thanos_receive_write_request_concurrent_",
-				reg,
-			),
-			int(maxWriteConcurrency),
-		)
-	}
-	limiter.requestLimiter = newConfigRequestLimiter(reg, &limiter.config.WriteLimits)
+	limiter.LoadConfig(limitsConfig)
 
 	return limiter
 }
@@ -69,12 +59,43 @@ func (l *limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.Pa
 			if err != nil {
 				return err
 			}
-			l.config = config
+			l.LoadConfig(config)
 			return nil
 		})
 	}, func(err error) {
 		cancel()
 	})
+}
+
+func (l *limiter) LoadConfig(config *RootLimitsConfig) {
+	l.Lock()
+	defer l.Unlock()
+	maxWriteConcurrency := config.WriteLimits.GlobalLimits.MaxConcurrency
+	if maxWriteConcurrency > 0 {
+		l.writeGate = gate.New(
+			extprom.WrapRegistererWithPrefix(
+				"thanos_receive_write_request_concurrent_",
+				l.registerer,
+			),
+			int(maxWriteConcurrency),
+		)
+	}
+	l.requestLimiter = newConfigRequestLimiter(
+		l.registerer,
+		&config.WriteLimits,
+	)
+}
+
+func (l *limiter) RequestLimiter() requestLimiter {
+	l.RLock()
+	defer l.RUnlock()
+	return l.requestLimiter
+}
+
+func (l *limiter) WriteGate() gate.Gate {
+	l.RLock()
+	defer l.RUnlock()
+	return l.writeGate
 }
 
 func LoadLimitConfig(limitsConfig *extkingpin.PathOrContent) (*RootLimitsConfig, error) {
