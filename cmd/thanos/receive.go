@@ -211,11 +211,10 @@ func runReceive(
 	)
 	writer := receive.NewWriter(log.With(logger, "component", "receive-writer"), dbs)
 
-	limiterConfig, err := limits.ParseLimitConfigContent(conf.limitsConfig)
+	limiter, err := limits.NewLimiter(conf.limitsConfig, reg)
 	if err != nil {
-		return errors.Wrap(err, "loading limiter configuration")
+		return errors.Wrap(err, "creating limiter")
 	}
-	limiter := limits.NewLimiter(limiterConfig, reg)
 
 	webHandler := receive.NewHandler(log.With(logger, "component", "receive-handler"), &receive.Options{
 		Writer:                   writer,
@@ -241,8 +240,15 @@ func runReceive(
 		MetaMonitoringHttpClient: conf.metaMonitoringHttpClient,
 		MetaMonitoringLimitQuery: conf.metaMonitoringLimitQuery,
 	})
-
-	limiter.StartConfigReloader(g, conf.limitsConfig)
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(func() error {
+			level.Info(logger).Log("msg", "the hashring initialized with config watcher.")
+			return limiter.StartConfigReloader(ctx)
+		}, func(error) {
+			cancel()
+		})
+	}
 
 	grpcProbe := prober.NewGRPC()
 	httpProbe := prober.NewHTTP()

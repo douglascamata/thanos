@@ -6,24 +6,23 @@ package limits
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/tools/extkingpin"
-	"github.com/oklog/run"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/gate"
-	"github.com/thanos-io/thanos/pkg/runutil"
+	"gopkg.in/fsnotify.v1"
 )
 
 // Limiter is responsible for managing the configuration and initializtion of
 // different types that apply limits to the Receive instance.
 type Limiter struct {
 	sync.RWMutex
-	requestLimiter requestLimiter
-	writeGate      gate.Gate
-	registerer     prometheus.Registerer
+	requestLimiter      requestLimiter
+	writeGate           gate.Gate
+	registerer          prometheus.Registerer
+	configPathOrContent *extkingpin.PathOrContent
 	// TODO: extract active series limiting logic into a self-contained type and
 	// move it here.
 }
@@ -36,45 +35,78 @@ type requestLimiter interface {
 
 // NewLimiter creates a new *Limiter given a configuration and prometheus
 // registerer.
-func NewLimiter(limitsConfig *RootLimitsConfig, reg prometheus.Registerer) *Limiter {
+func NewLimiter(pathOrContent *extkingpin.PathOrContent, reg prometheus.Registerer) (*Limiter, error) {
 	limiter := &Limiter{
 		writeGate:      gate.NewNoop(),
 		requestLimiter: &noopRequestLimiter{},
 		registerer:     reg,
 	}
 
-	if limitsConfig == nil {
-		return limiter
+	if pathOrContent == nil {
+		return limiter, nil
 	}
-	limiter.loadConfig(limitsConfig)
 
-	return limiter
+	limiter.configPathOrContent = pathOrContent
+	if err := limiter.loadConfig(); err != nil {
+		// TODO: wrap error
+		return nil, err
+	}
+
+	return limiter, nil
 }
 
 // StartConfigReloader starts the automatic configuration reloader based off of
 // the file indicated by pathOrContent. It starts a Go routine in the given
 // *run.Group.
-func (l *Limiter) StartConfigReloader(g *run.Group, pathOrContent *extkingpin.PathOrContent) {
-	if pathOrContent == nil {
-		return
+// TODO: add some metrics to the reloader
+func (l *Limiter) StartConfigReloader(ctx context.Context) error {
+	if l.configPathOrContent == nil {
+		return nil
+	}
+	if l.configPathOrContent.Path() == "" {
+		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	g.Add(func() error {
-		return runutil.Repeat(15*time.Second, ctx.Done(), func() error {
-			config, err := ParseLimitConfigContent(pathOrContent)
-			if err != nil {
-				return err
-			}
-			l.loadConfig(config)
+	// TODO: isolate this logic into a separate type for reusability
+	path := l.configPathOrContent.Path()
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return errors.Wrap(err, "creating file watcher")
+	}
+	if err := watcher.Add(path); err != nil {
+		return errors.Wrapf(err, "adding path %s to file watcher", path)
+	}
+	for {
+		select {
+		case <-ctx.Done():
 			return nil
-		})
-	}, func(err error) {
-		cancel()
-	})
+		case event := <-watcher.Events:
+			// fsnotify sometimes sends a bunch of events without name or operation.
+			// It's unclear what they are and why they are sent - filter them out.
+			if event.Name == "" {
+				break
+			}
+			// Everything but a CHMOD requires rereading.
+			// If the file was removed, we can't read it, so skip.
+			if event.Op^(fsnotify.Chmod|fsnotify.Remove) == 0 {
+				break
+			}
+			if err := l.loadConfig(); err != nil {
+				// TODO: log something
+			}
+		case err := <-watcher.Errors:
+			if err != nil {
+				// TODO: log something
+			}
+		}
+	}
 }
 
-func (l *Limiter) loadConfig(config *RootLimitsConfig) {
+func (l *Limiter) loadConfig() error {
+	config, err := ParseLimitConfigContent(l.configPathOrContent)
+	if err != nil {
+		return err
+	}
 	l.Lock()
 	defer l.Unlock()
 	maxWriteConcurrency := config.WriteLimits.GlobalLimits.MaxConcurrency
@@ -91,6 +123,7 @@ func (l *Limiter) loadConfig(config *RootLimitsConfig) {
 		l.registerer,
 		&config.WriteLimits,
 	)
+	return nil
 }
 
 // RequestLimiter is a safe getter for the request limiter.
