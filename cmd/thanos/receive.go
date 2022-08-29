@@ -243,8 +243,8 @@ func runReceive(
 	{
 		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(func() error {
-			level.Info(logger).Log("msg", "the hashring initialized with config watcher.")
-			return limiter.StartConfigReloader(ctx)
+			level.Info(logger).Log("msg", "limits config initialized with file watcher.")
+			return limiter.StartConfigReloader(ctx, nil)
 		}, func(error) {
 			cancel()
 		})

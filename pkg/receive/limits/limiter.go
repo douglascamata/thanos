@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-kit/log"
+	"github.com/thanos-io/thanos/pkg/extkingpin"
 	"os"
 	"sync"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/gate"
-	"gopkg.in/fsnotify.v1"
 )
 
 // Limiter is responsible for managing the configuration and initialization of
@@ -26,8 +26,6 @@ type Limiter struct {
 	registerer          prometheus.Registerer
 	configPathOrContent fileContent
 	logger              log.Logger
-	// TODO: extract active series limiting logic into a self-contained type and
-	// move it here.
 }
 
 type requestLimiter interface {
@@ -36,6 +34,7 @@ type requestLimiter interface {
 	AllowSamples(tenant string, amount int64) bool
 }
 
+// fileContent is an interface to avoid a direct dependency on kingpin or extkingpin.
 type fileContent interface {
 	Content() ([]byte, error)
 	Path() string
@@ -66,7 +65,7 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 
 // StartConfigReloader starts the automatic configuration reloader based off of
 // the file indicated by pathOrContent. It starts a Go routine in the given
-// *run.Group.
+// *run.Group. Pushes error parsing the reloaded configuration into errChan.
 // TODO: add some metrics to the reloader
 func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error) error {
 	if l.configPathOrContent == nil {
@@ -76,42 +75,16 @@ func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error)
 		return nil
 	}
 
-	// TODO: isolate this logic into a separate type for reusability
-	path := l.configPathOrContent.Path()
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return errors.Wrap(err, "creating file watcher")
-	}
-	if err := watcher.Add(path); err != nil {
-		return errors.Wrapf(err, "adding path %s to file watcher", path)
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case event := <-watcher.Events:
-			// fsnotify sometimes sends a bunch of events without name or operation.
-			// It's unclear what they are and why they are sent - filter them out.
-			if event.Name == "" {
-				break
-			}
-			// Everything but a CHMOD requires rereading.
-			// If the file was removed, we can't read it, so skip.
-			if event.Op^(fsnotify.Chmod|fsnotify.Remove) == 0 {
-				break
-			}
-			if err := l.loadConfig(); err != nil {
-				errChan <- err
-				errMsg := fmt.Sprintf("error reloading tenant limits config from %s", l.configPathOrContent.Path())
-				l.logger.Log("msg", errMsg, "err", err)
-			}
-			l.logger.Log("msg", "config reloaded")
-		case err := <-watcher.Errors:
-			if err != nil {
+	return extkingpin.PathContentReloader(ctx, l.configPathOrContent, l.logger, func() {
+		l.logger.Log("msg", "reloading limit config")
+		if err := l.loadConfig(); err != nil {
+			if errChan != nil {
 				errChan <- err
 			}
+			errMsg := fmt.Sprintf("error reloading tenant limits config from %s", l.configPathOrContent.Path())
+			l.logger.Log("msg", errMsg, "err", err)
 		}
-	}
+	})
 }
 
 func (l *Limiter) loadConfig() error {
@@ -169,21 +142,23 @@ func ParseLimitConfigContent(limitsConfig fileContent) (*RootLimitsConfig, error
 	return parsedConfig, nil
 }
 
-type noopConfigContent struct{}
+type nopConfigContent struct{}
 
-var _ fileContent = (*noopConfigContent)(nil)
+var _ fileContent = (*nopConfigContent)(nil)
 
-func (n noopConfigContent) Content() ([]byte, error) {
+// Content returns no content and no error.
+func (n nopConfigContent) Content() ([]byte, error) {
 	return nil, nil
 }
 
-func (n noopConfigContent) Path() string {
+// Path returns an empty path.
+func (n nopConfigContent) Path() string {
 	return ""
 }
 
-// NewNoopConfig creates a no-op config content (no configuration).
-func NewNoopConfig() noopConfigContent {
-	return noopConfigContent{}
+// NewNopConfig creates a no-op config content (no configuration).
+func NewNopConfig() nopConfigContent {
+	return nopConfigContent{}
 }
 
 type staticPathContent struct {
@@ -193,10 +168,12 @@ type staticPathContent struct {
 
 var _ fileContent = (*staticPathContent)(nil)
 
+// Content returns the cached content.
 func (t *staticPathContent) Content() ([]byte, error) {
 	return t.content, nil
 }
 
+// Path returns the path to the file that contains the content.
 func (t *staticPathContent) Path() string {
 	return t.path
 }
@@ -213,5 +190,6 @@ func NewStaticPathContent(fromPath string) (*staticPathContent, error) {
 
 func (t *staticPathContent) rewriteConfig(newContent []byte) error {
 	t.content = newContent
+	// Write the file to ensure possible file watcher reloaders get triggered.
 	return os.WriteFile(t.path, newContent, 0666)
 }

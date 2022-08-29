@@ -365,7 +365,7 @@ func newTestHandlerHashring(appendables []*fakeAppendable, replicationFactor uin
 		},
 	}
 
-	limiter, _ := limits.NewLimiter(limits.NewNoopConfig(), nil, log.NewNopLogger())
+	limiter, _ := limits.NewLimiter(limits.NewNopConfig(), nil, log.NewNopLogger())
 	for i := range appendables {
 		h := NewHandler(nil, &Options{
 			TenantHeader:      DefaultTenantHeader,
