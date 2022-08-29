@@ -5,9 +5,11 @@ package limits
 
 import (
 	"context"
+	"fmt"
+	"github.com/go-kit/log"
+	"os"
 	"sync"
 
-	"github.com/efficientgo/tools/extkingpin"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/extprom"
@@ -15,14 +17,15 @@ import (
 	"gopkg.in/fsnotify.v1"
 )
 
-// Limiter is responsible for managing the configuration and initializtion of
+// Limiter is responsible for managing the configuration and initialization of
 // different types that apply limits to the Receive instance.
 type Limiter struct {
 	sync.RWMutex
 	requestLimiter      requestLimiter
 	writeGate           gate.Gate
 	registerer          prometheus.Registerer
-	configPathOrContent *extkingpin.PathOrContent
+	configPathOrContent fileContent
+	logger              log.Logger
 	// TODO: extract active series limiting logic into a self-contained type and
 	// move it here.
 }
@@ -33,20 +36,26 @@ type requestLimiter interface {
 	AllowSamples(tenant string, amount int64) bool
 }
 
+type fileContent interface {
+	Content() ([]byte, error)
+	Path() string
+}
+
 // NewLimiter creates a new *Limiter given a configuration and prometheus
 // registerer.
-func NewLimiter(pathOrContent *extkingpin.PathOrContent, reg prometheus.Registerer) (*Limiter, error) {
+func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Logger) (*Limiter, error) {
 	limiter := &Limiter{
 		writeGate:      gate.NewNoop(),
 		requestLimiter: &noopRequestLimiter{},
 		registerer:     reg,
+		logger:         logger,
 	}
 
-	if pathOrContent == nil {
+	if configFile == nil {
 		return limiter, nil
 	}
 
-	limiter.configPathOrContent = pathOrContent
+	limiter.configPathOrContent = configFile
 	if err := limiter.loadConfig(); err != nil {
 		// TODO: wrap error
 		return nil, err
@@ -59,7 +68,7 @@ func NewLimiter(pathOrContent *extkingpin.PathOrContent, reg prometheus.Register
 // the file indicated by pathOrContent. It starts a Go routine in the given
 // *run.Group.
 // TODO: add some metrics to the reloader
-func (l *Limiter) StartConfigReloader(ctx context.Context) error {
+func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error) error {
 	if l.configPathOrContent == nil {
 		return nil
 	}
@@ -92,11 +101,14 @@ func (l *Limiter) StartConfigReloader(ctx context.Context) error {
 				break
 			}
 			if err := l.loadConfig(); err != nil {
-				// TODO: log something
+				errChan <- err
+				errMsg := fmt.Sprintf("error reloading tenant limits config from %s", l.configPathOrContent.Path())
+				l.logger.Log("msg", errMsg, "err", err)
 			}
+			l.logger.Log("msg", "config reloaded")
 		case err := <-watcher.Errors:
 			if err != nil {
-				// TODO: log something
+				errChan <- err
 			}
 		}
 	}
@@ -142,7 +154,7 @@ func (l *Limiter) WriteGate() gate.Gate {
 
 // ParseLimitConfigContent parses the limit configuration from the path or
 // content.
-func ParseLimitConfigContent(limitsConfig *extkingpin.PathOrContent) (*RootLimitsConfig, error) {
+func ParseLimitConfigContent(limitsConfig fileContent) (*RootLimitsConfig, error) {
 	if limitsConfig == nil {
 		return &RootLimitsConfig{}, nil
 	}
@@ -155,4 +167,51 @@ func ParseLimitConfigContent(limitsConfig *extkingpin.PathOrContent) (*RootLimit
 		return nil, errors.Wrap(err, "parse limit configuration")
 	}
 	return parsedConfig, nil
+}
+
+type noopConfigContent struct{}
+
+var _ fileContent = (*noopConfigContent)(nil)
+
+func (n noopConfigContent) Content() ([]byte, error) {
+	return nil, nil
+}
+
+func (n noopConfigContent) Path() string {
+	return ""
+}
+
+// NewNoopConfig creates a no-op config content (no configuration).
+func NewNoopConfig() noopConfigContent {
+	return noopConfigContent{}
+}
+
+type staticPathContent struct {
+	content []byte
+	path    string
+}
+
+var _ fileContent = (*staticPathContent)(nil)
+
+func (t *staticPathContent) Content() ([]byte, error) {
+	return t.content, nil
+}
+
+func (t *staticPathContent) Path() string {
+	return t.path
+}
+
+// NewStaticPathContent creates a new content that can be used to serve a static configuration. It copies the
+// configuration from `fromPath` into `destPath` to avoid confusion with file watchers.
+func NewStaticPathContent(fromPath string) (*staticPathContent, error) {
+	content, err := os.ReadFile(fromPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not load test content: %s", fromPath)
+	}
+	return &staticPathContent{content, fromPath}, nil
+}
+
+func (t *staticPathContent) rewriteConfig(newContent []byte) error {
+	t.content = newContent
+	return os.WriteFile(t.path, newContent, 0666)
 }

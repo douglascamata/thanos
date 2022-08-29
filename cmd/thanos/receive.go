@@ -211,7 +211,7 @@ func runReceive(
 	)
 	writer := receive.NewWriter(log.With(logger, "component", "receive-writer"), dbs)
 
-	limiter, err := limits.NewLimiter(conf.limitsConfig, reg)
+	limiter, err := limits.NewLimiter(conf.limitsConfig, reg, logger)
 	if err != nil {
 		return errors.Wrap(err, "creating limiter")
 	}

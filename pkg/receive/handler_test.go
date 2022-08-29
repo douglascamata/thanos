@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"math"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
@@ -363,13 +365,14 @@ func newTestHandlerHashring(appendables []*fakeAppendable, replicationFactor uin
 		},
 	}
 
+	limiter, _ := limits.NewLimiter(limits.NewNoopConfig(), nil, log.NewNopLogger())
 	for i := range appendables {
 		h := NewHandler(nil, &Options{
 			TenantHeader:      DefaultTenantHeader,
 			ReplicaHeader:     DefaultReplicaHeader,
 			ReplicationFactor: replicationFactor,
 			ForwardTimeout:    5 * time.Second,
-			Limiter:           limits.NewLimiter(nil, nil),
+			Limiter:           limiter,
 			Writer:            NewWriter(log.NewNopLogger(), newFakeTenantAppendable(appendables[i])),
 		})
 		handlers = append(handlers, h)
@@ -776,21 +779,25 @@ func TestReceiveWriteRequestLimits(t *testing.T) {
 			}
 			handlers, _ := newTestHandlerHashring(appendables, 3)
 			handler := handlers[0]
+
 			tenant := "test"
-			handler.Limiter = limits.NewLimiter(
-				&limits.RootLimitsConfig{
-					WriteLimits: limits.WriteLimitsConfig{
-						TenantsLimits: limits.TenantsWriteLimitsConfig{
-							tenant: &limits.WriteLimitConfig{
-								RequestLimits: limits.NewEmptyRequestLimitsConfig().
-									SetSizeBytesLimit(int64(1 * units.Megabyte)).
-									SetSeriesLimit(20).
-									SetSamplesLimit(200),
-							},
+			tenantConfig, err := yaml.Marshal(&limits.RootLimitsConfig{
+				WriteLimits: limits.WriteLimitsConfig{
+					TenantsLimits: limits.TenantsWriteLimitsConfig{
+						tenant: &limits.WriteLimitConfig{
+							RequestLimits: limits.NewEmptyRequestLimitsConfig().
+								SetSizeBytesLimit(int64(1 * units.Megabyte)).
+								SetSeriesLimit(20).
+								SetSamplesLimit(200),
 						},
 					},
 				},
-				nil,
+			})
+			tmpLimitsPath := path.Join(t.TempDir(), "limits.yaml")
+			testutil.Ok(t, os.WriteFile(tmpLimitsPath, tenantConfig, 0666))
+			limitConfig, _ := limits.NewStaticPathContent(tmpLimitsPath)
+			handler.Limiter, _ = limits.NewLimiter(
+				limitConfig, nil, log.NewNopLogger(),
 			)
 
 			wreq := &prompb.WriteRequest{
