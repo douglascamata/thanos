@@ -57,7 +57,7 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 
 	limiter.configPathOrContent = configFile
 	if err := limiter.loadConfig(); err != nil {
-		// TODO: wrap error
+		// TODO: wrap error.
 		return nil, err
 	}
 
@@ -67,7 +67,7 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 // StartConfigReloader starts the automatic configuration reloader based off of
 // the file indicated by pathOrContent. It starts a Go routine in the given
 // *run.Group. Pushes error parsing the reloaded configuration into errChan.
-// TODO: add some metrics to the reloader
+// TODO: add some metrics to the reloader.
 func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error) error {
 	if l.configPathOrContent == nil {
 		return nil
