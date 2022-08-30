@@ -5,12 +5,13 @@ package limits
 
 import (
 	"context"
-	"github.com/efficientgo/tools/core/pkg/testutil"
-	"github.com/go-kit/log"
 	"os"
 	"path"
 	"testing"
 	"time"
+
+	"github.com/efficientgo/tools/core/pkg/testutil"
+	"github.com/go-kit/log"
 )
 
 func TestLimiter_StartConfigReloader(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"math"
 	"math/rand"
@@ -22,6 +21,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"

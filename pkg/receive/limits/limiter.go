@@ -6,10 +6,11 @@ package limits
 import (
 	"context"
 	"fmt"
-	"github.com/go-kit/log"
-	"github.com/thanos-io/thanos/pkg/extkingpin"
 	"os"
 	"sync"
+
+	"github.com/go-kit/log"
+	"github.com/thanos-io/thanos/pkg/extkingpin"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
