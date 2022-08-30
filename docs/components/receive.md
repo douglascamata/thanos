@@ -114,7 +114,7 @@ From the example configuration below, it's understood that:
 
 The next sections explain what each configuration value means.
 
-```yaml mdox-exec="cat pkg/receive/testdata/limits_config/good_limits.yaml"
+```yaml mdox-exec="cat pkg/receive/limits/testdata/limits_config/good_limits.yaml"
 write:
   global:
     max_concurrency: 30
