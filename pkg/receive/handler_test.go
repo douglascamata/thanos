@@ -794,6 +794,9 @@ func TestReceiveWriteRequestLimits(t *testing.T) {
 					},
 				},
 			})
+			if err != nil {
+				t.Fatal("handler: failed to generate limit configuration")
+			}
 			tmpLimitsPath := path.Join(t.TempDir(), "limits.yaml")
 			testutil.Ok(t, os.WriteFile(tmpLimitsPath, tenantConfig, 0666))
 			limitConfig, _ := limits.NewStaticPathContent(tmpLimitsPath)
