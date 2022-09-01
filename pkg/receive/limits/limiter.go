@@ -54,22 +54,24 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 		logger:         logger,
 	}
 
-	limiter.configReloadCounter = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "thanos",
-			Subsystem: "receive",
-			Name:      "limits_config_reload_total",
-			Help:      "How many times the limit configuration was reloaded",
-		},
-	)
-	limiter.configReloadFailedCounter = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "thanos",
-			Subsystem: "receive",
-			Name:      "limits_config_reload_err_total",
-			Help:      "How many times the limit configuration failed to reload.",
-		},
-	)
+	if reg != nil {
+		limiter.configReloadCounter = promauto.With(reg).NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "thanos",
+				Subsystem: "receive",
+				Name:      "limits_config_reload_total",
+				Help:      "How many times the limit configuration was reloaded",
+			},
+		)
+		limiter.configReloadFailedCounter = promauto.With(reg).NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "thanos",
+				Subsystem: "receive",
+				Name:      "limits_config_reload_err_total",
+				Help:      "How many times the limit configuration failed to reload.",
+			},
+		)
+	}
 
 	if configFile == nil {
 		return limiter, nil
