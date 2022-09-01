@@ -6,6 +6,7 @@ package limits
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"os"
 	"sync"
 
@@ -22,11 +23,13 @@ import (
 // different types that apply limits to the Receive instance.
 type Limiter struct {
 	sync.RWMutex
-	requestLimiter      requestLimiter
-	writeGate           gate.Gate
-	registerer          prometheus.Registerer
-	configPathOrContent fileContent
-	logger              log.Logger
+	requestLimiter            requestLimiter
+	writeGate                 gate.Gate
+	registerer                prometheus.Registerer
+	configPathOrContent       fileContent
+	logger                    log.Logger
+	configReloadCounter       prometheus.Counter
+	configReloadFailedCounter prometheus.Counter
 }
 
 type requestLimiter interface {
@@ -51,6 +54,23 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 		logger:         logger,
 	}
 
+	limiter.configReloadCounter = promauto.With(reg).NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "thanos",
+			Subsystem: "receive",
+			Name:      "limits_config_reload_total",
+			Help:      "How many times the limit configuration was reloaded",
+		},
+	)
+	limiter.configReloadFailedCounter = promauto.With(reg).NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "thanos",
+			Subsystem: "receive",
+			Name:      "limits_config_reload_err_total",
+			Help:      "How many times the limit configuration failed to reload.",
+		},
+	)
+
 	if configFile == nil {
 		return limiter, nil
 	}
@@ -67,7 +87,6 @@ func NewLimiter(configFile fileContent, reg prometheus.Registerer, logger log.Lo
 // StartConfigReloader starts the automatic configuration reloader based off of
 // the file indicated by pathOrContent. It starts a Go routine in the given
 // *run.Group. Pushes error parsing the reloaded configuration into errChan.
-// TODO: add some metrics to the reloader.
 func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error) error {
 	if l.configPathOrContent == nil {
 		return nil
@@ -79,12 +98,14 @@ func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error)
 	return extkingpin.PathContentReloader(ctx, l.configPathOrContent, l.logger, func() {
 		l.logger.Log("msg", "reloading limit config")
 		if err := l.loadConfig(); err != nil {
+			l.configReloadFailedCounter.Inc()
 			if errChan != nil {
 				errChan <- err
 			}
 			errMsg := fmt.Sprintf("error reloading tenant limits config from %s", l.configPathOrContent.Path())
 			l.logger.Log("msg", errMsg, "err", err)
 		}
+		l.configReloadCounter.Inc()
 	})
 }
 
