@@ -37,10 +37,9 @@ func TestLimiter_StartConfigReloader(t *testing.T) {
 	ctx := context.Background()
 	defer ctx.Done()
 	errChan := make(chan error)
-	go func() {
-		err := limiter.StartConfigReloader(ctx, errChan)
-		testutil.Ok(t, err)
-	}()
+	err = limiter.StartConfigReloader(ctx, errChan)
+	testutil.Ok(t, err)
+
 	time.Sleep(1 * time.Second)
 	testutil.Ok(t, goodLimits.Rewrite(invalidLimits))
 	testutil.NotOk(t, <-errChan)
