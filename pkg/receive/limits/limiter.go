@@ -6,8 +6,8 @@ package limits
 import (
 	"context"
 	"fmt"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"os"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -98,16 +98,20 @@ func (l *Limiter) StartConfigReloader(ctx context.Context, errChan chan<- error)
 	}
 
 	return extkingpin.PathContentReloader(ctx, l.configPathOrContent, l.logger, func() {
-		l.logger.Log("msg", "reloading limit config")
+		level.Info(l.logger).Log("msg", "reloading limit config")
 		if err := l.loadConfig(); err != nil {
-			l.configReloadFailedCounter.Inc()
+			if failedReload := l.configReloadCounter; failedReload != nil {
+				failedReload.Inc()
+			}
 			if errChan != nil {
 				errChan <- err
 			}
 			errMsg := fmt.Sprintf("error reloading tenant limits config from %s", l.configPathOrContent.Path())
-			l.logger.Log("msg", errMsg, "err", err)
+			level.Error(l.logger).Log("msg", errMsg, "err", err)
 		}
-		l.configReloadCounter.Inc()
+		if reloadCounter := l.configReloadCounter; reloadCounter != nil {
+			reloadCounter.Inc()
+		}
 	})
 }
 
