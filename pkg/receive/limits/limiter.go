@@ -184,36 +184,3 @@ func (n nopConfigContent) Path() string {
 func NewNopConfig() nopConfigContent {
 	return nopConfigContent{}
 }
-
-type staticPathContent struct {
-	content []byte
-	path    string
-}
-
-var _ fileContent = (*staticPathContent)(nil)
-
-// Content returns the cached content.
-func (t *staticPathContent) Content() ([]byte, error) {
-	return t.content, nil
-}
-
-// Path returns the path to the file that contains the content.
-func (t *staticPathContent) Path() string {
-	return t.path
-}
-
-// NewStaticPathContent creates a new content that can be used to serve a static configuration. It copies the
-// configuration from `fromPath` into `destPath` to avoid confusion with file watchers.
-func NewStaticPathContent(fromPath string) (*staticPathContent, error) {
-	content, err := os.ReadFile(fromPath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "could not load test content: %s", fromPath)
-	}
-	return &staticPathContent{content, fromPath}, nil
-}
-
-func (t *staticPathContent) rewriteConfig(newContent []byte) error {
-	t.content = newContent
-	// Write the file to ensure possible file watcher reloaders get triggered.
-	return os.WriteFile(t.path, newContent, 0666)
-}

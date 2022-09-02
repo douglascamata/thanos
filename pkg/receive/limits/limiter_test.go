@@ -5,6 +5,7 @@ package limits
 
 import (
 	"context"
+	"github.com/thanos-io/thanos/pkg/extkingpin"
 	"os"
 	"path"
 	"testing"
@@ -20,7 +21,7 @@ func TestLimiter_StartConfigReloader(t *testing.T) {
 	copyLimitsFile := path.Join(t.TempDir(), "limits.yaml")
 	testutil.Ok(t, os.WriteFile(copyLimitsFile, origLimitsFile, 0666))
 
-	goodLimits, err := NewStaticPathContent(copyLimitsFile)
+	goodLimits, err := extkingpin.NewStaticPathContent(copyLimitsFile)
 	if err != nil {
 		t.Fatalf("error trying to save static limit config: %s", err)
 	}
@@ -41,6 +42,6 @@ func TestLimiter_StartConfigReloader(t *testing.T) {
 		testutil.Ok(t, err)
 	}()
 	time.Sleep(1 * time.Second)
-	testutil.Ok(t, goodLimits.rewriteConfig(invalidLimits))
+	testutil.Ok(t, goodLimits.Rewrite(invalidLimits))
 	testutil.NotOk(t, <-errChan)
 }
