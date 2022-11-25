@@ -204,8 +204,9 @@ func newBucketStoreMetrics(reg prometheus.Registerer) *bucketStoreMetrics {
 		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
 	})
 	m.resultSeriesCount = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-		Name: "thanos_bucket_store_series_result_series",
-		Help: "Number of series observed in the final result of a query.",
+		Name:       "thanos_bucket_store_series_result_series",
+		Help:       "Number of series observed in the final result of a query.",
+		Objectives: map[float64]float64{0.50: 0.1, 0.95: 0.1, 0.99: 0.001},
 	})
 
 	m.chunkSizeBytes = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -1230,7 +1231,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				lset, _ = set.At()
 			} else {
 				lset, series.Chunks = set.At()
-
 				stats.mergedChunksCount += len(series.Chunks)
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
@@ -2872,10 +2872,11 @@ type queryStats struct {
 	chunksFetchCount       int
 	ChunksFetchDurationSum time.Duration
 
-	GetAllDuration    time.Duration
-	mergedSeriesCount int
-	mergedChunksCount int
-	MergeDuration     time.Duration
+	GetAllDuration     time.Duration
+	mergedSeriesCount  int
+	mergedSamplesCount int
+	mergedChunksCount  int
+	MergeDuration      time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
